@@ -51,6 +51,7 @@ title('Lena grayscale inverted');
 pause();
 
 % gamma correction
+disp('Gamma corrected images');
 gamma_values = [0.5 0.75 1.0 1.25 1.5 1.75 2.0]; % gamma test candidates
 
 for i=1:length(gamma_values)
@@ -85,7 +86,6 @@ end
 
 
 %% Exercise 2 - "Image Qunatization"
-
 
 
 %% Exercise 3 - "Filtering"
