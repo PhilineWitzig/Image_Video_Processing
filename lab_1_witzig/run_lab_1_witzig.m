@@ -1,5 +1,4 @@
-% Lab 1 - Philine Witzig and 23.09.2020
-
+% Lab 1 - Philine Witzig and 06.10.2020
 
 % getting path to project as it might vary from MATLAB user_path
 path = matlab.desktop.editor.getActiveFilename;
@@ -104,16 +103,18 @@ switch exercise
         disp("Ex. 3 ...")
         I_gold_text = imread(fullfile(path_cur_folder, 'Images', 'gold-text.png'));
         
+        % 5x5 filter
         F1 = [0.0357; 0.2411; 0.4464; 0.2411; 0.0357] * [0.0357 0.2411 0.4464 0.2411 0.0357];
         freqz2(F1);
         title("Frequency response of 5x5 Filter");
         pause();
         
         I_gold_text_filt = imfilter(I_gold_text, F1, 'conv');
-        imshow(I_gold_text_filt);
+        imshow(I_gold_text_filt, []);
         title("Test image convolved with 5x5 filter, edges trimmed");
         pause();
         
+        % 3x3 filter
         F2 = (1 / 6) .* [-1 -4 -1; -4 26 -4; -1 -4 -1];
         freqz2(F2);
         title("Frequence response of 3x3 Filter");
@@ -177,8 +178,8 @@ switch exercise
         %% Exercise 5 - "Resampling"
         disp("Ex. 5 ...");
         I = imread(fullfile(path_cur_folder, 'Images', 'sub4.tif'));
-        I_sub_2 = I(1:2:end, 1:2:end);
-        I_sub_4 = I(1:4:end, 1:4:end);
+        I_sub_2 = I(1:2:end, 1:2:end); % downsample by factor 2
+        I_sub_4 = I(1:4:end, 1:4:end); % downsample by factor 4
         
         imshow(I);
         title("Ex. 5: original image");
@@ -205,20 +206,20 @@ switch exercise
         
         % 2DIFT without real part
         I_lena_imag = ifft2(imag(I_lena_FT)); % result is complex
-        imshow(abs(I_lena_imag), []);
+        imshow(real(I_lena_imag), []);
         title("Ex.6: 2DIFT of lena without real part");
         pause();
         
         % 0-phase
-        I_lena_FT_0_phase = abs(I_lena_FT);
+        I_lena_FT_0_phase = abs(I_lena_FT); % cf. lecture
         imshow(log(real(ifft2(I_lena_FT_0_phase))), []);
-        title("Ex.6: 2DFT with 0 phase");
+        title("Ex.6: 2DIFT with 0 phase");
         pause();
         
         % magnitude of 1
-        I_lena_FT_mag_1 = exp(1i*angle(I_lena_FT));
+        I_lena_FT_mag_1 = exp(1i*angle(I_lena_FT)); % cf. lecture
         imshow(real(ifft2(I_lena_FT_mag_1)), []);
-        title("Ex.6: 2DFT with magnitude 1");
+        title("Ex.6: 2DIFT with magnitude 1");
         pause();
         
     case 7
@@ -239,9 +240,11 @@ switch exercise
             imshow(I);
             pause();
             resp = input("Did you notice a difference? [y/n]", 's');
+            % user response is positive
             if (resp == 'y')
                 l1_last = l1;
                 l2_last = l2;
+                % choose correct increment
                 if (l1 + 20 < l2)
                     incr = 10;
                 elseif (l1 + 10 < l2)
@@ -251,6 +254,7 @@ switch exercise
                 end
                 l1 = l1 + incr;
                 l2 = l2 - incr;
+            % user response is negative
             elseif (resp == 'n')
                 if (incr == 1)
                     diff = false;
@@ -279,6 +283,7 @@ end
 
 %% Helper functions
 function pause()
+    % pausing image display until any key pressed
     try
         waitforbuttonpress;
     catch
@@ -287,11 +292,12 @@ function pause()
 end
 
 function new_color_table = gamma_corr(color_table, gamma)
+    % gamma correction
     new_color_table = color_table.^gamma; % elementwise exponential, gamma is the same for all channels
 end
 
 function mask = get_mask(I, template, phi)
-    % visualize max response
+    % visualize max response of correlation
     phi_max = max(phi, [], 'all');
     [y, x] = find(phi == phi_max);
     offset = [y - size(template, 1), x - size(template, 2)];
@@ -304,6 +310,7 @@ function mask = get_mask(I, template, phi)
 end
 
 function I = weber(l1, l2, lb)
+    % produce weber test image
     I = lb .* ones(600,600);
     I(220:380, 220:300) = l1;
     I(220:380, 300:380) = l2;
