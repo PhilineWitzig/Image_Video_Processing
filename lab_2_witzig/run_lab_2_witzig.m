@@ -14,6 +14,7 @@ I_wool = imread("Images/wool.png");
 switch exercise
     case 1
     %% Exercise 1 - "Fixed Threshold Method"
+    % Lena image
     % compute the dynamic range of the image, half it and normalize to
     % range [0, 1]
     t = double((max(I_lena, [], 'all') - min(I_lena, [], 'all')) / 2) / 255;
@@ -29,6 +30,7 @@ switch exercise
 
     case 2
     %% Exercise 2 - "Random Threshold Method"
+    % Lena image
     [height, width] = size(I_lena);
     noise = 0.2 * unidrnd(255, height, width);
     I_n = mat2gray(double(I_lena)+ noise);
@@ -42,7 +44,7 @@ switch exercise
     noise = 0.6 * unidrnd(255, height, width);
     I_n = mat2gray(double(I_wool)+ noise);
     t = (max(I_n, [], 'all') - min(I_n, [], 'all')) / 2;
-    BW = im2bw(I_n, t);
+    BW = imbinarize(I_n, t);
     figure('name', "Random Thresh Method");
     imshow(BW);
 
@@ -64,6 +66,7 @@ switch exercise
     N_c6 = length(unique(C6));
     N_e6 = length(unique(E6));
     
+    % lena img
     I_quant_c6 = quantize(double(I_lena), 0, N_c6 - 1);
     I_quant_e6 = quantize(double(I_lena), 0, N_e6 - 1);
     
@@ -97,11 +100,13 @@ switch exercise
 
     N_O8 = length(unique(O8));
     
+    % lena image
     I_quant_O8 = quantize(double(I_lena), 0, N_O8 - 1);
     I_thresh_O8 = ordered_thresh(I_quant_O8, O8);
     figure('name', "Diagonal ordered matrix with balanced cenetered points O8");
     imshow(I_thresh_O8);
     
+    % wool image
     I_quant_O8 = quantize(double(I_wool), 0, N_O8 - 1);
     I_thresh_O8 = ordered_thresh(I_quant_O8, O8);
     figure('name', "Diagonal ordered matrix with balanced cenetered points O8");
@@ -117,49 +122,61 @@ switch exercise
  
     N_D6 = length(unique(D6));
     
+    % Lena image
     I_quant_D6 = quantize(double(I_lena), 0, N_D6 - 1);
     I_thresh_D6 = ordered_thresh(I_quant_D6, D6);
     figure('name', "Diagonal ordered matrix with balanced cenetered points D6");
     imshow(I_thresh_D6);
     
+    % Wool image
     I_quant_D6 = quantize(double(I_wool), 0, N_D6 - 1);
     I_thresh_D6 = ordered_thresh(I_quant_D6, D6);
-    figure('name', "Diagonal ordered matrix with balanced cenetered points D4");
+    figure('name', "Diagonal ordered matrix with balanced cenetered points D6");
     imshow(I_thresh_D6);
     
     case 7
     %% Exercise 7 - "Error diffusion Method"
-    floyd = [0 0 0 ; 0 0 7; 3 5 1];
-    stucki = [0 0 0 8 4; 2 4 8 4 2; 1 2 4 2 1];
-    
     % Binary thresholding based on dynamic range of image
     t = double((max(I_lena, [], 'all') - min(I_lena, [], 'all')) / 2) / 255;
+ 
+    % filter entries are of format y, x, coeff
+    filter_floyd = [0 1 (7/16); 1 -1 (3/16); 1 0 (5/16); 1 1 (1/16)];
+    filter_stucki = [0 1 (8/42); 0 2 (4/42); 1 -2 (2/42); 1 -1 (4/42); 1 0 (8/42); 1 1 (4/42); 1 2 (2/42); 2 -2 (1/42); 2 -1 (2/42); 2 0 (4/42); 2 1 (2/42); 2 2 (1/42)];
     
-    for i=1:2
-        BW = 255 * imbinarize(I_lena, t);
-        error = double(I_lena) - BW;
-        diffused = conv2(error, floyd, 'same');
-        I_lena = mat2gray(double(I_lena) + diffused);
-    end
+    % Floyd Filter
+    I = rescale(I_lena);  % Rescale input image to range [0, 1]
+    I = error_diffusion(I, filter_floyd, t);
+    figure('name', "Error diffusion method with Floyd & Steinberg");
+    imshow(I);
     
-    figure('name', "Error diffusion method, Floyd-Steinberg");
-    imshow(BW);
-  
-    
-    % compute error between original image and thresholded version
-    error = I_lena - BW;
-    
-    
+    % Stucki Filter
+    I = rescale(I_lena);  % Rescale input image to range [0, 1]
+    I = error_diffusion(I, filter_stucki, t);
+    figure('name', "Error diffusion method with Stucki");
+    imshow(I);
 end
 
 function I_thresh = ordered_thresh(I, M)
+
+    % Implements the ordered threshold method. This is realized through an
+    % if-else statement reduced to one line, i.e. (a > b)*c + (~(a > b))*d,
+    % where we set c to 1 and d to 0. a is the value of the input image at
+    % a certain position and b is the respective threshold value at that
+    % position for the threshold mask.
+    
+    % param I:  input image to be thresholded
+    % param M:  threshold mask
+    % return:   binary image
+    
     [height, width] = size(I);
     [height_m, width_m] = size(M);
     I_thresh = zeros(height, width);
+    
     for x=0:width_m:(width - width_m - 1)
         for y=0:height_m:(height - height_m - 1)
             for x_m=1:width_m
                 for y_m=1:height_m
+                    % (a > b)*c + (~(a > b))*d
                     I_thresh(y + y_m, x + x_m) =  (I(y + y_m, x + x_m) > M(y_m, x_m)) * 1 + (~(I(y + y_m, x + x_m) > M(y_m, x_m))) * 0;
                 end
             end
@@ -168,7 +185,72 @@ function I_thresh = ordered_thresh(I, M)
 end
 
 function I_quant = quantize(I, lower, upper)
+
+    % Quantizes a grayscale image to a fixed range defined by an upper and
+    % lower bound.
+    
+    % param I:      image to be quantized
+    % param lower:  lower bound
+    % param upper:  upper bound
+    % return:       quantized image
+    
     I_min = min(I, [], 'all');
     I_max = max(I, [], 'all');
     I_quant = uint8((((I - I_min)) .* (upper - lower)) ./ ((I_max - I_min) + lower));
+end
+
+
+function I = diffuse_pixel(I, x, y, error, c)
+
+    % Diffuses one pixel of an image given the coordinates and a given
+    % error value according to the error threshold method.
+    %
+    % param I:      working image
+    % param x:      x-coordiante (centered pixel - offset)
+    % param y:      y-coordinate (centered pixel - offset)
+    % param error:  computed error for center pixel
+    % param c:      coefficient for diffusing the error
+    % return:       image with updated pixel at x, y
+    
+    I(y, x) = I(y, x) + error * c;
+end
+
+
+function I = error_diffusion(I, filter, t)
+
+    % Implements the error diffusion method according to the lecture.
+    %
+    % param I:      input grayscale image
+    % param filter: error diffusion filter of format y, x, coeff
+    % param t:      threshold value
+    % return:       dithered image
+    
+    [height, width] = size(I);
+    for x=1:width
+        for y=1:height
+            old_pixel = I(y, x);
+            
+            % apply threshold on old pixel
+            if (old_pixel >= t)
+                new_pixel = 1.0;
+            else 
+                new_pixel = 0.0;
+            end
+            
+            I(y, x) = new_pixel;
+            % compute error
+            error = old_pixel - new_pixel;
+            
+            for i=1:length(filter)
+                % get offset coordinates
+                y_i = y + filter(i, 1);
+                x_i = x + filter(i, 2);
+                
+                % diffuse error
+                if (1 <= y_i && y_i <= height) && (1 <= x_i && x_i <= width)
+                    I = diffuse_pixel(I, x_i, y_i, error, filter(i, 3));
+                end
+            end
+        end
+    end
 end
