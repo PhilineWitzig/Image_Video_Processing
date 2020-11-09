@@ -1,10 +1,9 @@
-% Lab 2 - Philine Witzig 14.10.2020
+% Lab 2 - Philine Witzig 27.10.2020
 
 % getting path to project as it might vary from MATLAB user_path
 path = matlab.desktop.editor.getActiveFilename;
 path_split = strsplit(path, '/');
 path_cur_folder = char(join(path_split(1:end - 1), '/'));
-
 
 % choose the exercise to be executed
 exercise = input("Enter the number of the exercise you want to execute: ");
@@ -15,48 +14,67 @@ switch exercise
     case 1
     %% Exercise 1 - "Fixed Threshold Method"
     % Lena image
-    % compute the dynamic range of the image, half it and normalize to
+    disp("Lena image...");
+    % compute the dynamic range of the image (max - min), half it and normalize to
     % range [0, 1]
     t = double((max(I_lena, [], 'all') - min(I_lena, [], 'all')) / 2) / 255;
+    
+    tic
+    % threshold it
     BW = imbinarize(I_lena, t);
+    toc
+
+    mse = immse(rescale(I_lena), double(BW));
+    disp(strcat("MSE: ", num2str(mse)));
+    
     figure('name', strcat("Fixed Thresh ", num2str(t)));
     imshow(BW);
     
     % Wool image
+    disp("Wool image...");
     t = double((max(I_wool, [], 'all') - min(I_wool, [], 'all')) / 2) / 255;
+    
+    tic
     BW = imbinarize(I_wool, t);
+    toc
+    
+    mse = immse(rescale(I_wool), double(BW));
+    disp(strcat("MSE: ", num2str(mse)));
+    
     figure('name', strcat("Fixed Thresh ", num2str(t)));
     imshow(BW);
 
     case 2
     %% Exercise 2 - "Random Threshold Method"
     % Lena image
-    [height, width] = size(I_lena);
-    noise = 0.2 * unidrnd(255, height, width);
-    I_n = mat2gray(double(I_lena)+ noise);
-    t = (max(I_n, [], 'all') - min(I_n, [], 'all')) / 2;
-    BW = im2bw(I_n, t);
+    disp("Lena image...");
+    
+    tic
+    I_thresh = random_thresh(I_lena, 0.2);
+    toc
+    
+    mse = immse(rescale(I_lena), double(I_thresh));
+    disp(strcat("MSE: ", num2str(mse)));
+    
     figure('name', "Random Thresh Method");
-    imshow(BW);
+    imshow(I_thresh);
     
     % Wool image
-    [height, width] = size(I_wool);
-    noise = 0.6 * unidrnd(255, height, width);
-    I_n = mat2gray(double(I_wool)+ noise);
-    t = (max(I_n, [], 'all') - min(I_n, [], 'all')) / 2;
-    BW = imbinarize(I_n, t);
+    disp("Wool image...");
+    
+    tic
+    I_thresh = random_thresh(I_wool, 0.6);
+    toc
+    
+    mse = immse(rescale(I_wool), double(I_thresh));
+    disp(strcat("MSE: ", num2str(mse)));
+    
     figure('name', "Random Thresh Method");
-    imshow(BW);
+    imshow(I_thresh);
 
     case 3
     %% Exercise 3 "Ordered Threshold Method"
-    % TODO remove this part actually, since we only had to implement the
-    % functions here
-    I_quant = quantize(double(I_lena), 0, 5);
-    M = [1 2 3 4 5; 1 2 3 4 5; 1 2 3 4 5; 1 2 3 4 5; 1 2 3 4 5];
-    I_thresh = ordered_thresh(I_quant, M);
-    figure('name', "Test filtering");
-    imshow(I_thresh);
+    disp("quantize(I, lower, upper) and ordered_thresh(I, M) are defined for this task.");
 
     case 4
     %% Exercise 4 - "Ordered Matrix with Centered Points"
@@ -66,28 +84,56 @@ switch exercise
     N_c6 = length(unique(C6));
     N_e6 = length(unique(E6));
     
-    % lena img
-    I_quant_c6 = quantize(double(I_lena), 0, N_c6 - 1);
-    I_quant_e6 = quantize(double(I_lena), 0, N_e6 - 1);
+    % Lena image
+    disp("Lena image...");
     
+    disp("C6:")
+    tic
+    I_quant_c6 = quantize(double(I_lena), 0, N_c6 - 1);
     I_thresh_c6 = ordered_thresh(I_quant_c6, C6);
-    I_thresh_e6 = ordered_thresh(I_quant_e6, E6);
+    toc
+    
+    mse = immse(rescale(I_lena), double(I_thresh_c6));
+    disp(strcat("MSE: ", num2str(mse)));
     
     figure('name', "Ordered matrix centered points C6");
     imshow(I_thresh_c6);
+    
+    disp("E6:")
+    tic
+    I_quant_e6 = quantize(double(I_lena), 0, N_e6 - 1);
+    I_thresh_e6 = ordered_thresh(I_quant_e6, E6);
+    toc
+    
+    mse = immse(rescale(I_lena), double(I_thresh_e6));
+    disp(strcat("MSE: ", num2str(mse)));
     
     figure('name', "Ordered matrix centered points E6");
     imshow(I_thresh_e6);
    
-    % wool img 
-    I_quant_c6 = quantize(double(I_wool), 0, N_c6 - 1);
-    I_quant_e6 = quantize(double(I_wool), 0, N_e6 - 1);
+    % Wool Image
+    disp("Wool image...");
     
+    disp("C6:");
+    tic
+    I_quant_c6 = quantize(double(I_wool), 0, N_c6 - 1);
     I_thresh_c6 = ordered_thresh(I_quant_c6, C6);
-    I_thresh_e6 = ordered_thresh(I_quant_e6, E6);
+    toc
+    
+    mse = immse(rescale(I_wool), double(I_thresh_c6));
+    disp(strcat("MSE: ", num2str(mse)));
     
     figure('name', "Ordered matrix centered points C6");
     imshow(I_thresh_c6);
+    
+    disp("E6:");
+    tic
+    I_quant_e6 = quantize(double(I_wool), 0, N_e6 - 1);
+    I_thresh_e6 = ordered_thresh(I_quant_e6, E6);
+    toc
+    
+    mse = immse(rescale(I_wool), double(I_thresh_e6));
+    disp(strcat("MSE: ", num2str(mse)));
     
     figure('name', "Ordered matrix centered points E6");
     imshow(I_thresh_e6);
@@ -100,15 +146,29 @@ switch exercise
 
     N_O8 = length(unique(O8));
     
-    % lena image
+    % Lena image
+    disp("Lena image...");
+    tic
     I_quant_O8 = quantize(double(I_lena), 0, N_O8 - 1);
     I_thresh_O8 = ordered_thresh(I_quant_O8, O8);
+    toc
+    
+    mse = immse(rescale(I_lena), double(I_thresh_O8));
+    disp(strcat("MSE: ", num2str(mse)));
+    
     figure('name', "Diagonal ordered matrix with balanced cenetered points O8");
     imshow(I_thresh_O8);
     
-    % wool image
+    % Wool image
+    disp("Wool image...");
+    tic
     I_quant_O8 = quantize(double(I_wool), 0, N_O8 - 1);
     I_thresh_O8 = ordered_thresh(I_quant_O8, O8);
+    toc
+    
+    mse = immse(rescale(I_wool), double(I_thresh_O8));
+    disp(strcat("MSE: ", num2str(mse)));
+    
     figure('name', "Diagonal ordered matrix with balanced cenetered points O8");
     imshow(I_thresh_O8);
     
@@ -123,38 +183,114 @@ switch exercise
     N_D6 = length(unique(D6));
     
     % Lena image
+    disp("Lena image...");
+    tic
     I_quant_D6 = quantize(double(I_lena), 0, N_D6 - 1);
     I_thresh_D6 = ordered_thresh(I_quant_D6, D6);
-    figure('name', "Diagonal ordered matrix with balanced cenetered points D6");
+    toc
+    
+    mse = immse(rescale(I_lena), double(I_thresh_D6));
+    disp(strcat("MSE: ", num2str(mse)));
+    
+    figure('name', "Diagonal ordered matrix with dispersed dots D6");
     imshow(I_thresh_D6);
     
     % Wool image
+    disp("Wool image...");
+    tic
     I_quant_D6 = quantize(double(I_wool), 0, N_D6 - 1);
     I_thresh_D6 = ordered_thresh(I_quant_D6, D6);
-    figure('name', "Diagonal ordered matrix with balanced cenetered points D6");
+    toc
+    
+    mse = immse(rescale(I_wool), double(I_thresh_D6));
+    disp(strcat("MSE: ", num2str(mse)));
+    
+    figure('name', "Diagonal ordered matrix with dispersed dots D6");
     imshow(I_thresh_D6);
     
     case 7
     %% Exercise 7 - "Error diffusion Method"
-    % Binary thresholding based on dynamic range of image
-    t = double((max(I_lena, [], 'all') - min(I_lena, [], 'all')) / 2) / 255;
- 
+  
     % filter entries are of format y, x, coeff
     filter_floyd = [0 1 (7/16); 1 -1 (3/16); 1 0 (5/16); 1 1 (1/16)];
     filter_stucki = [0 1 (8/42); 0 2 (4/42); 1 -2 (2/42); 1 -1 (4/42); 1 0 (8/42); 1 1 (4/42); 1 2 (2/42); 2 -2 (1/42); 2 -1 (2/42); 2 0 (4/42); 2 1 (2/42); 2 2 (1/42)];
     
+    % Lena Image
+    disp("Lena image...");
+    % Binary thresholding based on dynamic range of image
+    t = double((max(I_lena, [], 'all') - min(I_lena, [], 'all')) / 2) / 255;
+    
     % Floyd Filter
-    I = rescale(I_lena);  % Rescale input image to range [0, 1]
-    I = error_diffusion(I, filter_floyd, t);
+    disp("Floyd");
+    tic
+    I = error_diffusion(rescale(I_lena), filter_floyd, t);
+    toc
+    
+    mse = immse(rescale(I_lena), double(I));
+    disp(strcat("MSE: ", num2str(mse)));
+    
     figure('name', "Error diffusion method with Floyd & Steinberg");
     imshow(I);
     
     % Stucki Filter
-    I = rescale(I_lena);  % Rescale input image to range [0, 1]
-    I = error_diffusion(I, filter_stucki, t);
+    disp("Stucki");
+    tic
+    I = error_diffusion(rescale(I_lena), filter_stucki, t);
+    toc
+    
+    mse = immse(rescale(I_lena), double(I));
+    disp(strcat("MSE: ", num2str(mse)));
+    
+    figure('name', "Error diffusion method with Stucki");
+    imshow(I);
+    
+    % Wool Image
+    disp("Wool image...");
+    % Binary thresholding based on dynamic range of image
+    t = double((max(I_wool, [], 'all') - min(I_wool, [], 'all')) / 2) / 255;
+    
+    % Floyd Filter
+    disp("Floyd");
+    tic
+    I = error_diffusion(rescale(I_wool), filter_floyd, t);
+    toc
+    
+    mse = immse(rescale(I_wool), double(I));
+    disp(strcat("MSE: ", num2str(mse)));
+    
+    figure('name', "Error diffusion method with Floyd & Steinberg");
+    imshow(I);
+    
+    % Stucki Filter
+    disp("Stucki");
+    tic
+    I = error_diffusion(rescale(I_wool), filter_stucki, t);
+    toc
+    
+    mse = immse(rescale(I_wool), double(I));
+    disp(strcat("MSE: ", num2str(mse)));
+    
     figure('name', "Error diffusion method with Stucki");
     imshow(I);
 end
+
+
+function I_thresh = random_thresh(I, coeff)
+
+    % Implements the random threshold method by adding uniform random
+    
+    % noise to the input image and thresholding it afterwards.
+    % param I:      input image to be thresholded
+    % param coeff:  coefficient for setting the noise amplitude
+    % return:       binary image
+    
+    [height, width] = size(I);
+    noise = coeff * unidrnd(255, height, width);
+    I_n = mat2gray(double(I)+ noise);
+    t = (max(I_n, [], 'all') - min(I_n, [], 'all')) / 2;
+    I_thresh = imbinarize(I_n, t);
+end
+
 
 function I_thresh = ordered_thresh(I, M)
 
@@ -164,7 +300,7 @@ function I_thresh = ordered_thresh(I, M)
     % a certain position and b is the respective threshold value at that
     % position for the threshold mask.
     
-    % param I:  input image to be thresholded
+    % param I:  quantized input image to be thresholded
     % param M:  threshold mask
     % return:   binary image
     
@@ -183,6 +319,7 @@ function I_thresh = ordered_thresh(I, M)
         end
     end
 end
+
 
 function I_quant = quantize(I, lower, upper)
 
