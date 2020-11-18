@@ -15,6 +15,10 @@ while (subj_data_cleaned ~= subj_data)
     subj_data_cleaned = detect_outliers(subj_data);
 end 
 
+% Compute DMOS and CI
+[DMOS, DV] = get_DMOS(subj_data_cleaned);
+CI = get_CI(subj_data_cleaned, DV);
+plot_DMOS(subj_data_cleaned, DMOS, CI);
 
 
 %% Exercise 2.4 - "Objective Quality Assessment"
@@ -78,13 +82,37 @@ function T=detect_outliers(T)
 end
 
 
-function get_DMOS(T)
+function [DMOS,DV]=get_DMOS(T)
     [stimuli, participants] = size(T);
-    DMOS = zeros(stimuli - 4, 1);
+    DMOS = zeros(stimuli, 1); % without the reference stimuli? Should be 0 here
+    DV = zeros(stimuli, participants);
     for r=1:9:stimuli
         V_REF = T(r, :);
-        DV = 0;
-        for d=1:8
-           DMOS()sum((T(r + d, :) - V_REF) .+ 5)
+        for d=0:8
+            DV(r + d, :) = (T(r + d, :) - V_REF) + 5;
+            DMOS(r + d) = sum(DV(r + d, :)) / participants;
+        end
+    end
+end
+
+function CI=get_CI(T, DV)
+    [stimuli, participants] = size(T);
+    CI = zeros(stimuli, 1); % value of reference value is not 
+    for j=1:stimuli
+        CI(j, :) = icdf('T', 1 - (0.95/2), participants - 1) .* (std(DV(j, :)) / sqrt(participants));
+    end
+end
+
+
+function plot_DMOS(T, DMOS, CI)
+    [stimuli, participants] = size(T);
+    for i=1:9:stimuli
+        codec1 = DMOS(i+1:i+4, :);
+        codec2 = DMOS(i+5:i+8, :);
+        x = 1:4;
+        figure('name', "Errorbars");
+        errorbar(codec1, x, CI(i+1:i+4));
+        hold on;
+        errorbar(codec2, x, CI(i+5:i+8), 'r');
     end
 end
