@@ -3,30 +3,62 @@
 %pc = pcread("data/");
 %pcshow(pc);
 
+
 subj_data = readmatrix("data/subjective_results.csv");
 [height, width] = size(subj_data);
 % drop model names and sciper numbers
 subj_data = subj_data(2:height, 2:width);
 
-%% Exercise 2.3 - "Subjective Quality Assessment"
+exercise = input("Enter the number of the exercise you want to execute: ");
 
-subj_data_cleaned = detect_outliers(subj_data);
-while (subj_data_cleaned ~= subj_data)
+switch exercise
+    case 1
+    %% Exercise 2.3 - "Subjective Quality Assessment"
     subj_data_cleaned = detect_outliers(subj_data);
-end 
+    while (subj_data_cleaned ~= subj_data)
+        subj_data_cleaned = detect_outliers(subj_data);
+    end 
 
-% Compute DMOS and CI
-[DMOS, DV] = get_DMOS(subj_data_cleaned);
-CI = get_CI(subj_data_cleaned, DV);
-plot_DMOS(subj_data_cleaned, DMOS, CI);
+    % Compute DMOS and CI
+    [DMOS, DV] = get_DMOS(subj_data_cleaned);
+    CI = get_CI(DV);
+    % Create plots
+    plot_DMOS(subj_data_cleaned, DMOS, CI);
 
+    
+    case 2
+    %% Exercise 2.4 - "Objective Quality Assessment"
+    myDir = pwd;
+    pc_files = dir(fullfile(myDir, 'models')); % get all files
 
-%% Exercise 2.4 - "Objective Quality Assessment"
+    for f_ref=1:length(pc_files)
+        cur_ref_file_name = pc_files(f_ref).name;
+        
+        if contains(cur_ref_file_name, "ref")
+            pc_ref = pcread(fullfile("models", cur_ref_file_name));
+            cur_model = strsplit(cur_ref_file_name, "_");
+            cur_model = cur_model(1);
+            
+            for f_eval=1:length(pc_files)
+                cur_eval_file_name = pc_files(f_eval).name;
+                if contains(cur_eval_file_name, cur_model) && ~(contains(cur_eval_file_name, "ref"))
+                    pc_eval = pcread(fullfile("models", cur_eval_file_name));
+                    disp("Distance between: ")
+                    disp(cur_ref_file_name);
+                    disp(cur_eval_file_name);
+                    quality = symm_P2P(pc_ref, pc_eval, ["MSE", "Hausdorff"]);
+                    disp(strcat("Objective quality for MSE, Huassdorff: ", num2str(quality))); 
+                    disp("_____");
+                end
+            end
+        end
+    end
+        
+    case 3
+    %% Exercise 2.5 - "Benchmarking of Objective Quality Metrics"
 
-
-%% Exercise 2.5 - "Benchmarking of Objective Quality Metrics"
-
-
+end
+    
 function T=detect_outliers(T)
     [stimuli, participants] = size(T);
     n_r1 = stimuli;
@@ -81,38 +113,85 @@ function T=detect_outliers(T)
     end
 end
 
-
 function [DMOS,DV]=get_DMOS(T)
     [stimuli, participants] = size(T);
-    DMOS = zeros(stimuli, 1); % without the reference stimuli? Should be 0 here
+    DMOS = zeros(stimuli, 1); 
     DV = zeros(stimuli, participants);
     for r=1:9:stimuli
         V_REF = T(r, :);
-        for d=0:8
+        for d=1:8
             DV(r + d, :) = (T(r + d, :) - V_REF) + 5;
             DMOS(r + d) = sum(DV(r + d, :)) / participants;
         end
     end
+
+    % without the reference stimuli
+    for i=1:8:32
+        DMOS(i, :) = [];
+        DV(i, :) = [];
+    end
 end
 
-function CI=get_CI(T, DV)
-    [stimuli, participants] = size(T);
-    CI = zeros(stimuli, 1); % value of reference value is not 
+function CI=get_CI(DV)
+    [stimuli, participants] = size(DV);
+    CI = zeros(stimuli, 1); % value of reference value is not included
     for j=1:stimuli
         CI(j, :) = icdf('T', 1 - (0.95/2), participants - 1) .* (std(DV(j, :)) / sqrt(participants));
     end
 end
 
-
 function plot_DMOS(T, DMOS, CI)
-    [stimuli, participants] = size(T);
-    for i=1:9:stimuli
-        codec1 = DMOS(i+1:i+4, :);
-        codec2 = DMOS(i+5:i+8, :);
-        x = 1:4;
-        figure('name', "Errorbars");
-        errorbar(codec1, x, CI(i+1:i+4));
+   
+    [stimuli, participants] = size(DMOS);
+    
+    % remove reference from DMOS and CI
+    
+    data = load("data/data.mat");
+    whos data
+    disp(data.data)
+    
+    for i=1:8:stimuli
+        codec1 = DMOS(i:i+3, :);
+        codec2 = DMOS(i+4:i+7, :);
+        x_codec1 = data.data.bpp(i:i+3);
+        x_codec2 = data.data.bpp(i+4:i+7);
+        if i == 1
+            figure('name', "Long dress");
+        elseif i == 9
+            figure('name', "Guanyin");
+        elseif i == 17
+            figure('name', "Phil");   
+        else
+            figure('name', "Rhetorician");
+        end
+        errorbar(x_codec1, codec1, CI(i:i+3));
         hold on;
-        errorbar(codec2, x, CI(i+5:i+8), 'r');
+        errorbar(x_codec2, codec2, CI(i+4:i+7), 'r');
+        ylim([0 6]);
+        yticks([1 2 3 4 5]);
+        xlabel("Bitrates");
+        ylabel("DMOS");
+        legend({"Codec 1: pcc geo color", "Codec 2: cwi pcl"}, 'location', 'northwest');
     end
+end
+
+function qual=symm_P2P(pc1, pc2, metrics)
+    ref = pc1.Location;
+    eval = pc2.Location;
+    qual=[];
+    [idcs, dist] = knnsearch(ref, eval, 'Distance', 'euclidean');
+  
+    for metric = metrics
+        if metric == "MSE"
+            qual=[qual, sum(dist .^2) / length(dist)];
+        elseif metric == "Hausdorff"
+            qual=[qual, max(min(dist,[],2))]; % Directed from eval to ref
+            % hba = max(min(D));% Directed from ref to eval
+            % H = max([hab,hba]);
+        else
+            disp("Invalid metric")
+            return
+        end
+    end
+    
 end
