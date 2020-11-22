@@ -30,24 +30,54 @@ switch exercise
     %% Exercise 2.4 - "Objective Quality Assessment"
     myDir = pwd;
     pc_files = dir(fullfile(myDir, 'models')); % get all files
+    T = cell2table(cell(0, 8));
+    T.Properties.VariableNames = {'filename', 'point2point_MSE', 'point2point_HD', 'angular', 'rgb_1', 'rgb_2', 'yuv', 'br'};
+    data = load("data/data.mat").data;
 
     for f_ref=1:length(pc_files)
         cur_ref_file_name = pc_files(f_ref).name;
-        
+       
         if contains(cur_ref_file_name, "ref")
             pc_ref = pcread(fullfile("models", cur_ref_file_name));
             cur_model = strsplit(cur_ref_file_name, "_");
             cur_model = cur_model(1);
             
+ 
             for f_eval=1:length(pc_files)
                 cur_eval_file_name = pc_files(f_eval).name;
+                
                 if contains(cur_eval_file_name, cur_model) && ~(contains(cur_eval_file_name, "ref"))
                     pc_eval = pcread(fullfile("models", cur_eval_file_name));
+                    
                     disp("Distance between: ")
                     disp(cur_ref_file_name);
                     disp(cur_eval_file_name);
-                    quality = symm_P2P(pc_ref, pc_eval, ["MSE", "Hausdorff"]);
-                    disp(strcat("Objective quality for MSE, Huassdorff: ", num2str(quality))); 
+                    
+                    % Get points of reference pc and pc under evaluation
+                    ref = pc_ref.Location;
+                    eval = pc_eval.Location;
+                    
+                    % Get nearest neighbors in both directions 
+                    [idcs_re, dist_re] = knnsearch(ref, eval, 'Distance', 'euclidean'); % from  eval to ref
+                    [idcs_er, dist_er] = knnsearch(eval, ref, 'Distance', 'euclidean'); % from  ref to eval
+                    
+                    % If normals don't exist yet, uncomment this code to
+                    % compute normals (this may take a while)
+                    % normals_ref = pcnormals(pc_ref, 128);
+                    % pc_ref.Normal = normals_ref;
+                    % normals_eval = pcnormals(pc_eval, 128);
+                    % pc_eval.Normal = normals_eval;
+                    % pcwrite(pc_ref, cur_ref_file_name);
+                    % pcwrite(pc_eval, cur_eval_file_name);
+                    
+                    qual_point2point = Point2Point(dist_re, dist_er);
+                    qual_plane2plane = Plane2Plane(pc_ref, pc_eval, idcs_re, idcs_er);
+                    qual_color = ColorMetric(pc_ref, pc_eval, idcs_re, idcs_er);
+                    bitrate = data(strcmp(data.filename, cur_eval_file_name), :).bpp;
+                    T = [T;{cur_eval_file_name, qual_point2point(1), qual_point2point(2), qual_plane2plane, qual_color(1), qual_color(2), qual_color(1,3), bitrate}];
+                    
+                    writetable(T, "objective.csv");
+                    
                     disp("_____");
                 end
             end
@@ -175,23 +205,79 @@ function plot_DMOS(T, DMOS, CI)
     end
 end
 
-function qual=symm_P2P(pc1, pc2, metrics)
-    ref = pc1.Location;
-    eval = pc2.Location;
-    qual=[];
-    [idcs, dist] = knnsearch(ref, eval, 'Distance', 'euclidean');
-  
-    for metric = metrics
-        if metric == "MSE"
-            qual=[qual, sum(dist .^2) / length(dist)];
-        elseif metric == "Hausdorff"
-            qual=[qual, max(min(dist,[],2))]; % Directed from eval to ref
-            % hba = max(min(D));% Directed from ref to eval
-            % H = max([hab,hba]);
-        else
-            disp("Invalid metric")
-            return
-        end
-    end
+function qual = Point2Point(dist_re, dist_er)
+    qual_MSE = max(sum(dist_re .^2) / length(dist_re), sum(dist_er .^2) / length(dist_er));
+       
+    hausdorff_er = max(min(dist_re,[],2)); % Directed from eval to ref
+    hausdorff_re = max(min(dist_er, [], 2)); % Directed from ref to eval
+    qual_HD = max(hausdorff_er, hausdorff_re);
     
+    qual = [qual_MSE, qual_HD];
+    
+end
+
+function qual = Plane2Plane(pc_ref, pc_eval, icds_re, idcs_er)
+    
+    normals_ref = pc_ref.Normal;
+    normals_eval = pc_eval.Normal;
+
+    % from eval to ref
+    normals_ref_matched = normals_ref(icds_re, :);
+    theta_hat = acos(dot(normals_ref_matched, normals_eval, 2) ./ (norm(normals_ref_matched) .* norm(normals_eval)));
+    theta = min(theta_hat, pi - theta_hat);
+    qual_re = 1 - (2 .* theta ./ pi);
+    qual_re_MSE = sum(qual_re .^2) / length(qual_re);
+    
+    % from ref to eval
+    normals_eval_matched = normals_eval(idcs_er, :);
+    theta_hat = acos(dot(normals_eval_matched, normals_ref, 2) ./ (norm(normals_eval_matched) .* norm(normals_ref)));
+    theta = min(theta_hat, pi - theta_hat);
+    qual_er = 1 - (2 .* theta ./ pi);
+    qual_er_MSE = sum(qual_er .^2) / length(qual_er);
+    
+    % get max
+    qual = max(qual_re_MSE, qual_er_MSE);
+end
+
+function qual = ColorMetric(pc_ref, pc_eval, idcs_re, idcs_er)
+
+    
+    colors_ref_matched = double(pc_ref.Color(idcs_re, :));
+    colors_eval_matched = double(pc_eval.Color(idcs_er, :));
+    
+    % PSNR RGB
+    color_diff_ref = colors_ref_matched - double(pc_eval.Color);
+    color_diff_eval = colors_eval_matched - double(pc_ref.Color);
+    
+    PSNR_RGB_1_ref = get_PSNR(color_diff_ref);
+    PSNR_RGB_1_eval = get_PSNR(color_diff_eval);
+    PSNR_RGB_1 = max(PSNR_RGB_1_ref, PSNR_RGB_1_eval);
+    
+    PSNR_RGB_2_ref = (get_PSNR(color_diff_ref(:, 1)) + get_PSNR(color_diff_ref(:, 2)) + get_PSNR(color_diff_ref(:, 3))) / 3;
+    PSNR_RGB_2_eval = (get_PSNR(color_diff_eval(:, 1)) + get_PSNR(color_diff_eval(:, 2)) + get_PSNR(color_diff_eval(:, 3))) / 3;
+    PSNR_RGB_2 = max(PSNR_RGB_2_ref, PSNR_RGB_2_eval);
+    
+    % PSNR YUV
+    color_diff_ref_YUV = RGB2YUV(colors_ref_matched) - RGB2YUV(double(pc_eval.Color));
+    PSNR_YUV_ref = (6 * get_PSNR(color_diff_ref_YUV(:, 1)) + get_PSNR(color_diff_ref_YUV(:, 2)) + get_PSNR(color_diff_ref_YUV(:, 3))) / 8;
+    color_diff_eval_YUV = RGB2YUV(colors_eval_matched) - RGB2YUV(double(pc_ref.Color));
+    PSNR_YUV_eval = (6 * get_PSNR(color_diff_eval_YUV(:, 1)) + get_PSNR(color_diff_eval_YUV(:, 2)) + get_PSNR(color_diff_eval_YUV(:, 3))) / 8;
+    PSNR_YUV = max(PSNR_YUV_ref, PSNR_YUV_eval);
+    
+    qual = [PSNR_RGB_1, PSNR_RGB_2, PSNR_YUV];
+    
+end
+
+function colors_YUV = RGB2YUV(colors_RGB)
+    colors_YUV = zeros(size(colors_RGB));
+    colors_YUV(:, 1) = 0.299 .* colors_RGB(:, 1) + 0.587 .* colors_RGB(:, 2) + 0.144 .* colors_RGB(:, 3);
+    colors_YUV(:, 2) = 0.493 .* (colors_RGB(:, 3) - colors_YUV(:, 1));
+    colors_YUV(:, 3) = 0.877 .* (colors_RGB(:, 1) - colors_YUV(:, 1));
+end
+
+function PSNR = get_PSNR(colors)
+
+    [height, width] = size(colors);
+    MSE = sum(colors.^2, 'all') / (height * width);
+    PSNR = 10 * log10(255^2 / MSE);
 end
