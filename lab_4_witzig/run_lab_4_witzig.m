@@ -6,86 +6,90 @@
 
 subj_data = readmatrix("data/subjective_results.csv");
 [height, width] = size(subj_data);
-% drop model names and sciper numbers
+% drop model names and sciper number
 subj_data = subj_data(2:height, 2:width);
 
 exercise = input("Enter the number of the exercise you want to execute: ");
+subj_data_cleaned = detect_outliers(subj_data);
+while (subj_data_cleaned ~= subj_data)
+    subj_data_cleaned = detect_outliers(subj_data);
+end 
+
 
 switch exercise
     case 1
     %% Exercise 2.3 - "Subjective Quality Assessment"
-    subj_data_cleaned = detect_outliers(subj_data);
-    while (subj_data_cleaned ~= subj_data)
-        subj_data_cleaned = detect_outliers(subj_data);
-    end 
 
     % Compute DMOS and CI
     [DMOS, DV] = get_DMOS(subj_data_cleaned);
     CI = get_CI(DV);
     % Create plots
-    plot_DMOS(subj_data_cleaned, DMOS, CI);
+    plot_DMOS(DMOS, CI);
 
-    
     case 2
     %% Exercise 2.4 - "Objective Quality Assessment"
-    myDir = pwd;
-    pc_files = dir(fullfile(myDir, 'models')); % get all files
-    T = cell2table(cell(0, 8));
-    T.Properties.VariableNames = {'filename', 'point2point_MSE', 'point2point_HD', 'angular', 'rgb_1', 'rgb_2', 'yuv', 'br'};
-    data = load("data/data.mat").data;
 
-    for f_ref=1:length(pc_files)
-        cur_ref_file_name = pc_files(f_ref).name;
-       
-        if contains(cur_ref_file_name, "ref")
-            pc_ref = pcread(fullfile("models", cur_ref_file_name));
-            cur_model = strsplit(cur_ref_file_name, "_");
-            cur_model = cur_model(1);
-            
- 
-            for f_eval=1:length(pc_files)
-                cur_eval_file_name = pc_files(f_eval).name;
-                
-                if contains(cur_eval_file_name, cur_model) && ~(contains(cur_eval_file_name, "ref"))
-                    pc_eval = pcread(fullfile("models", cur_eval_file_name));
-                    
-                    disp("Distance between: ")
-                    disp(cur_ref_file_name);
-                    disp(cur_eval_file_name);
-                    
-                    % Get points of reference pc and pc under evaluation
-                    ref = pc_ref.Location;
-                    eval = pc_eval.Location;
-                    
-                    % Get nearest neighbors in both directions 
-                    [idcs_re, dist_re] = knnsearch(ref, eval, 'Distance', 'euclidean'); % from  eval to ref
-                    [idcs_er, dist_er] = knnsearch(eval, ref, 'Distance', 'euclidean'); % from  ref to eval
-                    
-                    % If normals don't exist yet, uncomment this code to
-                    % compute normals (this may take a while)
-                    % normals_ref = pcnormals(pc_ref, 128);
-                    % pc_ref.Normal = normals_ref;
-                    % normals_eval = pcnormals(pc_eval, 128);
-                    % pc_eval.Normal = normals_eval;
-                    % pcwrite(pc_ref, cur_ref_file_name);
-                    % pcwrite(pc_eval, cur_eval_file_name);
-                    
-                    qual_point2point = Point2Point(dist_re, dist_er);
-                    qual_plane2plane = Plane2Plane(pc_ref, pc_eval, idcs_re, idcs_er);
-                    qual_color = ColorMetric(pc_ref, pc_eval, idcs_re, idcs_er);
-                    bitrate = data(strcmp(data.filename, cur_eval_file_name), :).bpp;
-                    T = [T;{cur_eval_file_name, qual_point2point(1), qual_point2point(2), qual_plane2plane, qual_color(1), qual_color(2), qual_color(1,3), bitrate}];
-                    
-                    writetable(T, "objective.csv");
-                    
-                    disp("_____");
+    if isfile("objective.csv")
+        T = readtable("objective.csv");
+    else
+        myDir = pwd;
+        pc_files = dir(fullfile(myDir, 'models')); % get all files
+        T = cell2table(cell(0, 8));
+        T.Properties.VariableNames = {'filename', 'point2point_MSE', 'point2point_HD', 'angular', 'rgb_1', 'rgb_2', 'yuv', 'br'};
+        data = load("data/data.mat").data;
+        for f_ref=1:length(pc_files)
+            cur_ref_file_name = pc_files(f_ref).name;
+
+            if contains(cur_ref_file_name, "ref")
+                pc_ref = pcread(fullfile("models", cur_ref_file_name));
+                cur_model = strsplit(cur_ref_file_name, "_");
+                cur_model = cur_model(1);
+
+
+                for f_eval=1:length(pc_files)
+                    cur_eval_file_name = pc_files(f_eval).name;
+
+                    if contains(cur_eval_file_name, cur_model) && ~(contains(cur_eval_file_name, "ref"))
+                        pc_eval = pcread(fullfile("models", cur_eval_file_name));
+
+                        disp("Distance between: ")
+                        disp(cur_ref_file_name);
+                        disp(cur_eval_file_name);
+
+                        % Get points of reference pc and pc under evaluation
+                        ref = pc_ref.Location;
+                        eval = pc_eval.Location;
+
+                        % Get nearest neighbors in both directions 
+                        [idcs_re, dist_re] = knnsearch(ref, eval, 'Distance', 'euclidean'); % from  eval to ref
+                        [idcs_er, dist_er] = knnsearch(eval, ref, 'Distance', 'euclidean'); % from  ref to eval
+
+                        % If normals don't exist yet, uncomment this code to
+                        % compute normals (this may take a while)
+                        % normals_ref = pcnormals(pc_ref, 128);
+                        % pc_ref.Normal = normals_ref;
+                        % normals_eval = pcnormals(pc_eval, 128);
+                        % pc_eval.Normal = normals_eval;
+                        % pcwrite(pc_ref, cur_ref_file_name);
+                        % pcwrite(pc_eval, cur_eval_file_name);
+
+                        qual_point2point = Point2Point(dist_re, dist_er);
+                        qual_plane2plane = Plane2Plane(pc_ref, pc_eval, idcs_re, idcs_er);
+                        qual_color = ColorMetric(pc_ref, pc_eval, idcs_re, idcs_er);
+                        bitrate = data(strcmp(data.filename, cur_eval_file_name), :).bpp;
+                        T = [T;{cur_eval_file_name, qual_point2point(1), qual_point2point(2), qual_plane2plane, qual_color(1), qual_color(2), qual_color(1,3), bitrate}];
+                        writetable(T, "objective.csv");
+                    end
                 end
             end
         end
     end
-        
+    
+    plot_objectives(T);
+
     case 3
     %% Exercise 2.5 - "Benchmarking of Objective Quality Metrics"
+    plot_DMOS_objective("dmos.csv", "objective.csv");
 
 end
     
@@ -170,15 +174,19 @@ function CI=get_CI(DV)
     end
 end
 
-function plot_DMOS(T, DMOS, CI)
+function plot_DMOS(DMOS, CI)
    
     [stimuli, participants] = size(DMOS);
     
     % remove reference from DMOS and CI
-    
     data = load("data/data.mat");
     whos data
     disp(data.data)
+    
+    % store data
+    names = data.data.filename;
+    T = array2table([names,  DMOS, CI, data.data.bpp], 'VariableNames',  {'filename','dmos', 'ci', 'br'});
+    writetable(T, "dmos.csv");
     
     for i=1:8:stimuli
         codec1 = DMOS(i:i+3, :);
@@ -281,3 +289,53 @@ function PSNR = get_PSNR(colors)
     MSE = sum(colors.^2, 'all') / (height * width);
     PSNR = 10 * log10(255^2 / MSE);
 end
+
+function plot_objectives(T)
+    data = table2array(T(:, 2:8));
+    [row, column] = size(T);
+    for metric=1:6
+        for i=1:8:row
+            figure;
+            codec1 = data(i:i+3,metric);
+            br_1 = data(i:i+3, 7);
+            codec2 = data(i+4:i+7, metric);
+            br_2 = data(i+4:i+7, 7);
+            plot(br_1, codec1);
+            title(T.Properties.VariableNames{metric + 1});
+            xlabel("Bitrates");
+            ylabel("Objective Metric");
+            hold on;
+            plot(br_2, codec2, 'r');
+            legend({"Codec 1: cwi pcl", "Codec 2: pcc geo color"}, 'location', 'northeast');
+        end
+    end
+end
+
+function plot_DMOS_objective(dmos_file, obj_file)
+    T_DMOS = readtable(dmos_file);
+    T_OBJ = readtable(obj_file);
+    T = join(T_OBJ, T_DMOS, 'Keys','filename');
+    [models, metrics] = size(T_OBJ);
+    
+    T_corr = cell2table(cell(0, 3));
+    T_corr.Properties.VariableNames = {'metric', 'pearson', 'spearman'};
+    
+    for metric=2:metrics-1
+        figure;
+        e = errorbar(table2array(T(:,metric)), T.dmos, T.ci);
+        e.LineStyle = 'none';
+        title(T.Properties.VariableNames{metric});
+        xlabel("Objective metric");
+        ylabel("DMOS");
+        hold on;
+        % fix T.dmos
+        pearson = corr(table2array(T(:,metric)), T.dmos, 'Type', 'Pearson');
+        spearman = corr(table2array(T(:,metric)), T.dmos, 'Type', 'Spearman');
+        T_corr = [T_corr; {T.Properties.VariableNames{metric}, pearson, spearman}];
+        polyfit(subj, table2array(T(:,metric)), 1);
+    end
+    
+    writetable(T_corr, "correlation.csv");
+
+end
+    
