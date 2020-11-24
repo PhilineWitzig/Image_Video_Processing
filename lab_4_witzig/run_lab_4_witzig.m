@@ -4,16 +4,20 @@
 %pcshow(pc);
 
 
-subj_data = readmatrix("data/subjective_results.csv");
-[height, width] = size(subj_data);
+subj_data = readtable("data/subjective_results.csv");
+subj_data(1, :) = [];
 % drop model names and sciper number
-subj_data = subj_data(2:height, 2:width);
+%subj_data = subj_data(2:height, 1:width);
 
 exercise = input("Enter the number of the exercise you want to execute: ");
 subj_data_cleaned = detect_outliers(subj_data);
-while (subj_data_cleaned ~= subj_data)
+
+while (~isempty(setdiff(subj_data_cleaned,subj_data)))
+    subj_data = subj_data_cleaned;
     subj_data_cleaned = detect_outliers(subj_data);
 end 
+
+disp(subj_data_cleaned);
 
 
 switch exercise
@@ -89,7 +93,7 @@ switch exercise
 
     case 3
     %% Exercise 2.5 - "Benchmarking of Objective Quality Metrics"
-    plot_DMOS_objective("dmos.csv", "objective.csv");
+    plot_DMOS_objective("dmos.csv", "objective.csv", subj_data_cleaned);
 
 end
     
@@ -102,28 +106,28 @@ function T=detect_outliers(T)
     % MOS of all subjects for all the stimuli for a given content i
     MOS_r2_x = zeros(n_r2, 1);
     % MOS of one subject for all the stimuli for given content i
-    MOS_r2_y = zeros(n_r2, participants);
+    MOS_r2_y = zeros(n_r2, participants-1);
  
     for model=1:stimuli
-        MOS_r1(model) = mean(T(model, :));
+        MOS_r1(model) = mean(table2array(T(model, 2:participants)));
     end
     
     for content=1:9:stimuli
-        MOS_r2_x(content) = mean(T(content:content + 8, :), 'all');
-        MOS_r2_y(content, :) = mean(T(content:content + 8, :));
+        MOS_r2_x(content) = mean(table2array(T(content:content + 8, 2:participants)), 'all');
+        MOS_r2_y(content, :) = mean(table2array(T(content:content + 8, 2:participants)));
     end
     
     % get r1
     PLCC_r1 = zeros(participants, 1);
     PLCC_r2 = zeros(participants, 1);
     
-    for subj=1:participants
-        score_subj = T(:, subj);
+    for subj=2:participants
+        score_subj = table2array(T(:, subj));
         nominator_r1 = n_r1 * sum(MOS_r1.* score_subj) - sum(MOS_r1) * sum(score_subj);
         denominator_r1 = sqrt(n_r1 * sum(MOS_r1.^2) - sum(MOS_r1)^2) * sqrt(n_r1 * sum(score_subj.^2) - sum(score_subj)^2);
         PLCC_r1(subj) = nominator_r1/denominator_r1;
         
-        MOS_subj = MOS_r2_y(:, subj);
+        MOS_subj = MOS_r2_y(:, subj-1);
         nominator_r2 = n_r2 * sum(MOS_r2_x .* MOS_subj) - sum(MOS_r2_x) * sum(MOS_subj);
         denominator_r2 = sqrt(n_r2 * sum(MOS_r2_x.^2) - sum(MOS_r2_x)^2) * sqrt(n_r2 * sum(MOS_subj.^2) - sum(MOS_subj)^2);
         PLCC_r2(subj) = nominator_r2/denominator_r2;
@@ -131,7 +135,7 @@ function T=detect_outliers(T)
     
     worst_value = 0.0;
     worst_candidate = 0;
-    for i=1:participants
+    for i=2:participants
         if PLCC_r1(i) < 0.75 && PLCC_r2(i) < 0.8
             diff = mean((0.75- PLCC_r1(i)) + (0.8 - PLCC_r2(i)));
             if diff > worst_value
@@ -150,12 +154,12 @@ end
 function [DMOS,DV]=get_DMOS(T)
     [stimuli, participants] = size(T);
     DMOS = zeros(stimuli, 1); 
-    DV = zeros(stimuli, participants);
+    DV = zeros(stimuli, participants - 1);
     for r=1:9:stimuli
-        V_REF = T(r, :);
+        V_REF = table2array(T(r, 2:participants));
         for d=1:8
-            DV(r + d, :) = (T(r + d, :) - V_REF) + 5;
-            DMOS(r + d) = sum(DV(r + d, :)) / participants;
+            DV(r + d, :) = (table2array(T(r + d, 2:participants)) - V_REF) + 5;
+            DMOS(r + d) = sum(DV(r + d, :)) / (participants - 1);
         end
     end
 
@@ -311,28 +315,65 @@ function plot_objectives(T)
     end
 end
 
-function plot_DMOS_objective(dmos_file, obj_file)
+function plot_DMOS_objective(dmos_file, obj_file, subj_data)
     T_DMOS = readtable(dmos_file);
     T_OBJ = readtable(obj_file);
+    subj_data.Properties.VariableNames{'Var1'} = 'filename';
+    [models, participants] = size(subj_data);
     T = join(T_OBJ, T_DMOS, 'Keys','filename');
+    T_subj_obj = join(T_OBJ, subj_data, 'Keys', 'filename');
     [models, metrics] = size(T_OBJ);
     
-    T_corr = cell2table(cell(0, 3));
-    T_corr.Properties.VariableNames = {'metric', 'pearson', 'spearman'};
-    
+    T_corr = cell2table(cell(0, 10));
+    T_corr.Properties.VariableNames = {'metric', 'pearson', 'spearman', 'rmse', 'pearson_fit_linear', 'spearman_fit_linear', 'rmse_fit_linear', 'pearson_fit_cubic', 'spearman_fit_cubic', 'rmse_fit_cubic'};
+   
     for metric=2:metrics-1
+        obj_scores = table2array(T_subj_obj(:,metric)); % metric values
         figure;
-        e = errorbar(table2array(T(:,metric)), T.dmos, T.ci);
+        e = errorbar(obj_scores, T.dmos, T.ci);
         e.LineStyle = 'none';
         title(T.Properties.VariableNames{metric});
         xlabel("Objective metric");
         ylabel("DMOS");
         hold on;
-        % fix T.dmos
-        pearson = corr(table2array(T(:,metric)), T.dmos, 'Type', 'Pearson');
-        spearman = corr(table2array(T(:,metric)), T.dmos, 'Type', 'Spearman');
-        T_corr = [T_corr; {T.Properties.VariableNames{metric}, pearson, spearman}];
-        polyfit(subj, table2array(T(:,metric)), 1);
+       
+        subj_scores = mean(table2array(T_subj_obj(:, metrics+1:end)), 2); % MOS 
+        pearson = corr(obj_scores, subj_scores, 'Type', 'Pearson');
+        spearman = corr(obj_scores, subj_scores, 'Type', 'Spearman');
+        rmse = sqrt(sum((obj_scores - subj_scores).^2, 'all'));
+    
+        linear_fit = polyfit(obj_scores, subj_scores, 1);
+        cubic_fit = polyfit(obj_scores, subj_scores, 3);
+        
+        obj_scores_linear = polyval(linear_fit, obj_scores);
+        obj_scores_cubic = polyval(cubic_fit, obj_scores);
+        
+        figure;
+        e = errorbar(obj_scores_linear, T.dmos, T.ci);
+        e.LineStyle = 'none';
+        title(T.Properties.VariableNames{metric});
+        xlabel("Objective metric, linear fit");
+        ylabel("DMOS");
+        hold on;
+        
+        figure;
+        e = errorbar(obj_scores_cubic, T.dmos, T.ci);
+        e.LineStyle = 'none';
+        title(T.Properties.VariableNames{metric});
+        xlabel("Objective metric, cubic fit");
+        ylabel("DMOS");
+        hold on;
+        
+        pearson_linear = corr(obj_scores_linear, subj_scores, 'Type', 'Pearson');
+        spearman_linear = corr(obj_scores_linear, subj_scores, 'Type', 'Spearman');
+        rmse_linear = sqrt(sum((obj_scores_linear - subj_scores).^2, 'all'));
+        
+        pearson_cubic = corr(obj_scores_cubic, subj_scores, 'Type', 'Pearson');
+        spearman_cubic = corr(obj_scores_cubic, subj_scores, 'Type', 'Spearman');
+        rmse_cubic = sqrt(sum((obj_scores_cubic - subj_scores).^2, 'all'));
+        
+        T_corr = [T_corr; {T.Properties.VariableNames{metric}, pearson, spearman, rmse, pearson_linear, spearman_linear, rmse_linear, pearson_cubic, spearman_cubic, rmse_cubic}];
+        
     end
     
     writetable(T_corr, "correlation.csv");
