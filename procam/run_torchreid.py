@@ -1,82 +1,132 @@
+"""Module for running person detection -> tracking -> re-identification"""
+
 import numpy as np
 import cv2
 import config
 import torch
 import STE_NVAN
 import imutils
+import dlib
 import torch.nn as nn
 from torchsummary import summary
 from STE_NVAN.net import models
 from collections import OrderedDict
-from imutils.object_detection import non_max_suppression
 
 
 def main():
 
+    # load pretrained STE_NVAN
     network = nn.DataParallel(models.CNN(2048, model_type='resnet50_NL_stripe_hr',
                                          num_class=625, non_layers=[0, 2, 3, 0], temporal='Done'))
-    # load weights
     state = torch.load('STE_NVAN/ckpt/STE_NVAN.pth', map_location='cpu')
     network.load_state_dict(state)
-    network = network.cpu().double()
+    network = network.cpu().double()  # load to cpzs for now
     network.eval()
-    # summary(network, (256, 128, 3))
 
-    # state_dict = torch.load(config.MODEL_WEIGHT_RESNET50_s1,
-    #                        map_location=torch.device('cpu'))
-    # network.load_state_dict(state_dict)
+    # load DNN object detector
+    object_detector = cv2.dnn.readNetFromCaffe(
+        config.MODEL_MOBILE_NET_SSD_PROTOTEXT, config.MODEL_MOBILE_NET_SSD_CAFFE)
 
-    hog = cv2.HOGDescriptor()
-    hog.setSVMDetector(cv2.HOGDescriptor_getDefaultPeopleDetector())
-
+    # for reading frames from webcam
     cap = cv2.VideoCapture(0)
     frame_counter = 0
-    buffer = np.zeros([8, 3, 256, 128])
-    i = 0
+    att = 0
+
+    # keep track of trackers, labels and IDs
+    trackers = []
+    labels = []
+    IDs = []
+
+    # buffering frames for a certain number of persons and for a certain number of frames
+    buffer = np.zeros([config.MAX_PERSON_COUNT, config.ATTENTION_WIDTH, 3,
+                       256, 128])  # 8 persons for a duration of 8 frames
 
     with torch.no_grad():
         while(True):
 
-            if frame_counter % 3 == 0:  # process every 3rd frame
+            if frame_counter % config.FRAME_DROP == 0:  # process every 10th frame for real time deployment
                 ret, frame = cap.read()
-                #frame = imutils.resize(frame, width=min(400, frame.shape[1]))
-                #frame = cv2.resize(frame, (256, 128))
-                # grayscale for faster detection?
-                # gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-                # detect people in the image
-                rects, weights = hog.detectMultiScale(frame, winStride=(4, 4),
-                                                      padding=(8, 8), scale=1.05)
+                frame = imutils.resize(frame, width=600)
+                frame_copy = frame.copy()
+                rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # dlib requires rgb
 
-                rects = np.array([[x, y, x + w, y + h] for (x, y, w, h) in rects])
-                rects = non_max_suppression(rects, probs=None, overlapThresh=0.65)
-                # draw the final bounding boxes
-                for (xA, yA, xB, yB) in rects:
-                    cv2.rectangle(frame, (xA, yA), (xB, yB), (0, 255, 0), 2)
-                    person = frame[yA:yB, xA:xB]
+                if len(trackers) == 0 or frame_counter % 300 == 0:  # rerun detection every 10 seconds
+                    trackers = []
+                    labels = []
+                    IDs = []
+                    # 8 persons for a duration of 8 frames
+                    buffer = np.zeros(
+                        [config.MAX_PERSON_COUNT, config.ATTENTION_WIDTH, 3, 256, 128])
+
+                    (h, w) = frame.shape[:2]
+                    blob = cv2.dnn.blobFromImage(frame, 0.007843, (w, h), 127.5)
+                    object_detector.setInput(blob)
+                    detections = object_detector.forward()
+
+                    for i in np.arange(0, detections.shape[2]):
+
+                        confidence = detections[0, 0, i, 2]
+                        # only consider objects with confidence value larger than certain value
+                        if confidence > config.CONFIDENCE:
+                            idx = int(detections[0, 0, i, 1])
+                            label = config.CLASSES[idx]
+                            # if class label is not a person, ignore it
+                            if config.CLASSES[idx] != "person":
+                                continue
+
+                            box = detections[0, 0, i, 3:7] * np.array([w, h, w, h])
+                            (startX, startY, endX, endY) = box.astype("int")
+                            t = dlib.correlation_tracker()
+                            rect = dlib.rectangle(startX, startY, endX, endY)
+                            # start tracking the object
+                            t.start_track(rgb, rect)
+                            labels.append(label)
+                            trackers.append(t)
+                            cv2.rectangle(frame_copy, (startX, startY), (endX, endY),
+                                          (0, 255, 0), 2)
+
+                else:
+                    # update tracker psoitions only
+                    for (t, l) in zip(trackers, labels):
+                        t.update(rgb)
+                        pos = t.get_position()
+                        startX = int(pos.left())
+                        startY = int(pos.top())
+                        endX = int(pos.right())
+                        endY = int(pos.bottom())
+
+                        cv2.rectangle(frame_copy, (startX, startY), (endX, endY),
+                                      (0, 255, 0), 2)
+
+                for i in range(len(trackers)):  # iterate over all persons
+                    pos = trackers[i].get_position()
+                    startX = int(pos.left())
+                    startY = int(pos.top())
+                    endX = int(pos.right())
+                    endY = int(pos.bottom())
+
+                    person = frame[startX:endX, startY:endY]
                     person = cv2.resize(person, (128, 256))
-                    print("Found person.")
-                    buffer[i] = np.reshape(person, [3, 256, 128])
-                    i += 1
-                    if i % 8 == 0:
-                        i = 0
-                        # add batch dimension
-                        input = torch.from_numpy(buffer)
-                        B, C, H, W = input.shape
-                        input = input.reshape(B//8, 8, C, H, W)  # TODO: don't hardcode 8
-                        # TOOO fix
-                        output = network.forward(input.double())
-                        print(output.size())
-                        print(torch.max(output.data, 1))
-                        #ff = outputs.data.cpu()
+                    buffer[i, att] = np.reshape(person, [3, 256, 128])
 
-                # Display the resulting frame
-                cv2.imshow('frame', frame)
+                att += 1
+                if att % config.ATTENTION_WIDTH == 0:
+                    input = torch.from_numpy(buffer)
+                    output = network.forward(input.double())
+                    ids = torch.max(output.data, 1)
+                    # for i in range(len(output)):
+                    #    if output[i] != 236:  # 236 seems to be the label for 0 input
+                    #        IDs.append(output[i])
+                    print(ids)
+                    att = 0
+
+                # TODO: display IDs in frame
+                cv2.imshow('frame', frame_copy)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
             frame_counter += 1
-
-            if frame_counter == 10000:  # start counting from 0 again after the 10k'th frame
+            if frame_counter == 10000:  # start counting from 0 again after the 10k'th frame to avoid overflow
                 frame_counter = 0
 
     cap.release()
